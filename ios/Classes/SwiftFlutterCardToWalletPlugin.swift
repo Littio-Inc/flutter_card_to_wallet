@@ -229,11 +229,11 @@ extension ViewController: PKAddPaymentPassViewControllerDelegate {
             viewController: self
         )
         interactor.execute(channel: _channel, request: request) { response in
-            let request = PKAddPaymentPassRequest()
-            request.activationData = response.activationData
-            request.ephemeralPublicKey = response.ephemeralPublicKey
-            request.encryptedPassData = response.encryptedPassData
-            handler(request)
+            let requestCard = PKAddPaymentPassRequest()
+            requestCard.activationData = response.activationData
+            requestCard.ephemeralPublicKey = response.ephemeralPublicKey
+            requestCard.encryptedPassData = response.encryptedPassData
+            handler(requestCard)
         }
   }
   // Listener sobre el resultado de aprovisionamiento
