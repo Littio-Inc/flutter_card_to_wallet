@@ -11,7 +11,7 @@ class FlutterCardToWallet {
 
   /// Associate each rendered Widget to its `onPressed` event handler
   static final Map<String, FutureOr<dynamic> Function(MethodCall)> _handlers =
-      Map();
+      {};
 
   factory FlutterCardToWallet() {
     return _instance;
@@ -35,20 +35,5 @@ class FlutterCardToWallet {
 
   void removeHandler(String key) {
     _handlers.remove(key);
-  }
-
-  static Future<String?> get platformVersion async {
-    final String? version = await _channel.invokeMethod('getPlatformVersion');
-    return version;
-  }
-
-  static Future<String?> get test async {
-    final String? version = await _channel.invokeMethod('test');
-    return version;
-  }
-
-  static Future<dynamic> enrollCard() async {
-    dynamic result = await _channel.invokeMethod('enrollCard');
-    print(result);
   }
 }

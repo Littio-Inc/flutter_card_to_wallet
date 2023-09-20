@@ -27,7 +27,9 @@ class PKAddPassButtonNativeViewFactory: NSObject, FlutterPlatformViewFactory {
             key: buttonArgs["key"] as! String,
             channel: channel,
             cardId: buttonArgs["cardId"] as! String,
-            cardData: Card(panTokenSuffix: buttonArgs["panTokenSufix"] as! String, holder: buttonArgs["holder"] as! String)
+            cardData: Card(panTokenSuffix: buttonArgs["panTokenSufix"] as! String, holder: buttonArgs["holder"] as! String),
+            host: buttonArgs["host"] as! String,
+            token: buttonArgs["token"] as! String
         )
         return PKAddPassButtonNativeView(
             frame: frame,
@@ -67,49 +69,11 @@ class PKAddPassButtonNativeView: NSObject, FlutterPlatformView {
     func view() -> UIView {
         _view
     }
-
-    // func createAddPassButton() {
-    //     let passButton = PKAddPassButton(addPassButtonStyle: PKAddPassButtonStyle.black)
-    //     passButton.frame = CGRect(x: 0, y: 0, width: _width, height: _height)
-    //     passButton.addTarget(self, action: #selector(passButtonAction), for: .touchUpInside)
-    //     _view.addSubview(passButton)
-    // }
-
-    // @objc func passButtonAction() {
-    //   _invokeAddButtonPressed()
-    //   guard isPassKitAvailable() else {
-    //     return
-    //   }
-    //   initEnrollProcess()
-    // }
-    
-    // func _invokeAddButtonPressed() {
-    //     NSLog("INVOKE FROM SWIFT")
-    //     _channel.invokeMethod(AddToWalletEvent.addButtonPressed.rawValue, arguments: ["key": _key])
-    // }
-    
 }
 
-// public class SwiftFlutterCardToWalletPlugin: NSObject, FlutterPlugin {
-//   public static func register(with registrar: FlutterPluginRegistrar) {
-//     let channel = FlutterMethodChannel(name: "flutter_card_to_wallet", binaryMessenger: registrar.messenger())
-//     let instance = SwiftFlutterCardToWalletPlugin()
-//     let factory = PKAddPassButtonNativeViewFactory(messenger: registrar.messenger(), channel: channel)
-//     registrar.register(factory, withId: "PKAddPassButton")
-//     registrar.addMethodCallDelegate(instance, channel: channel)
-//   }
-
-//     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-//         return result(FlutterMethodNotImplemented)
-//     }
-// }
 
 public class SwiftFlutterCardToWalletPlugin: NSObject, FlutterPlugin {
   public static func register(with registrar: FlutterPluginRegistrar) {
-    // let channel = FlutterMethodChannel(name: "flutter_card_to_wallet", binaryMessenger: registrar.messenger())
-    // let instance = SwiftFlutterCardToWalletPlugin()
-    // registrar.addMethodCallDelegate(instance, channel: channel)
-
     let channel = FlutterMethodChannel(name: "flutter_card_to_wallet", binaryMessenger: registrar.messenger())
     let instance = SwiftFlutterCardToWalletPlugin()
     let factory = PKAddPassButtonNativeViewFactory(messenger: registrar.messenger(), channel: channel)
@@ -133,17 +97,23 @@ class ViewController: UIViewController {
     private var _channel: FlutterMethodChannel
     private var _cardId: String
     private var _cardData: Card
+    private var _host: String
+    private var _token: String
 
     init(
         key: String,
         channel: FlutterMethodChannel,
         cardId: String,
-        cardData: Card
+        cardData: Card,
+        host: String,
+        token: String
     ) {
         self._key = key
         self._channel = channel
         self._cardId = cardId
         self._cardData = cardData
+        self._host = host
+        self._token = token
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -178,22 +148,22 @@ class ViewController: UIViewController {
     }
 
     private func initEnrollProcess() {
-        print("INIT ENROLL")
         guard let configuration = PKAddPaymentPassRequestConfiguration( encryptionScheme: .ECC_V2) else {
             showPassKitUnavailable(message: "Apple Pay no está disponible para tu dispositivo por el momento")
+            _invokeAddButtonPressed(status: "error-configuration-init")
             return
         }
         configuration.cardholderName = _cardData.holder
         configuration.primaryAccountSuffix = _cardData.panTokenSuffix
-        print("CARD HOLDER")
-        print(_cardData.holder)
         guard let enrollViewController = PKAddPaymentPassViewController(
             requestConfiguration: configuration,
             delegate: self
         ) else {
             showPassKitUnavailable(message: "Apple Pay no está disponible para tu dispositivo. Ocurrió un error al configurarlo")
+            _invokeAddButtonPressed(status: "error-configuration-enroll")
             return
         }
+        _invokeAddButtonPressed(status: "start-enroll")
         present(enrollViewController, animated: true, completion: nil)
     }
 
@@ -205,6 +175,13 @@ class ViewController: UIViewController {
         let action = UIAlertAction(title: "Ok", style: .default, handler: nil)
         alert.addAction(action)
         present(alert, animated: true, completion: nil)
+    }
+
+    func _invokeAddButtonPressed(status: String) {
+        _channel.invokeMethod(
+            AddToWalletEvent.addButtonPressed.rawValue,
+            arguments: ["key": _key, "panTokenSuffix": _cardData.panTokenSuffix, "status": status]
+        )
     }
 }
 
@@ -225,10 +202,10 @@ extension ViewController: PKAddPaymentPassViewControllerDelegate {
             cardId: self._cardId
         )
         let interactor = GetPassKitDataIssuerHostInteractor(
-            key: self._key,
-            viewController: self
+            host: self._host,
+            token: self._token
         )
-        interactor.execute(channel: _channel, request: request) { response in
+        interactor.execute(request: request) { response in
             let requestCard = PKAddPaymentPassRequest()
             requestCard.activationData = response.activationData
             requestCard.ephemeralPublicKey = response.ephemeralPublicKey
@@ -236,6 +213,7 @@ extension ViewController: PKAddPaymentPassViewControllerDelegate {
             handler(requestCard)
         }
   }
+
   // Listener sobre el resultado de aprovisionamiento
   func addPaymentPassViewController(
     _ controller: PKAddPaymentPassViewController,
@@ -250,57 +228,72 @@ extension ViewController: PKAddPaymentPassViewControllerDelegate {
   }
 }
 
-struct IssuerRequest {
+struct IssuerRequest: Codable {
   let certificates: [Data]
   let nonce: Data
   let nonceSignature: Data
   let cardId: String
 }
 
-struct IssuerResponse {
+struct IssuerResponse: Codable {
   let activationData: Data
   let ephemeralPublicKey: Data
   let encryptedPassData: Data
 }
 
 private class GetPassKitDataIssuerHostInteractor {
+    private let _host: String
+    private let _token: String
 
-    private let _key: String
-    private let _viewController: ViewController
-
-    init(key: String, viewController: ViewController) {
-        self._key = key
-        self._viewController = viewController
+    init(host: String, token: String) {
+        self._host = host
+        self._token = token
     }
 
-    func execute(
-        channel: FlutterMethodChannel,
-        request: IssuerRequest,
-        onFinish: @escaping (IssuerResponse) -> ()
-    ) {
-        channel.invokeMethod(
-            AddToWalletEvent.addButtonPressed.rawValue,
-            arguments: [
-                "key": self._key,
-                "certificates": request.certificates,
-                "nonce": request.nonce,
-                "nonceSignature": request.nonceSignature
-            ]) { res in
-            if let apiResponse = res as? [String: Any],
-                let activationData = apiResponse["activationData"] as? Data,
-                let ephemeralPublicKey = apiResponse["ephemeralPublicKey"] as? Data,
-                let encryptedPassData = apiResponse["encryptedPassData"] as? Data {
-                    let response = IssuerResponse(
-                        activationData: activationData,
-                        ephemeralPublicKey: ephemeralPublicKey,
-                        encryptedPassData: encryptedPassData
-                    )
-                    onFinish(response)
-            } else {
-               self._viewController.showPassKitUnavailable(message: "Error en la respuesta del servidor")
-               return
+    func execute(request: IssuerRequest, onFinish: @escaping (IssuerResponse) -> Void) {
+        // URL del host al que deseas hacer la solicitud POST
+        let url = URL(string: self._host)!
+        
+        // Crear la solicitud URLRequest para una solicitud POST
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("Bearer " + self._token, forHTTPHeaderField: "Authorization")
+        
+        // Aquí puedes configurar los encabezados de la solicitud si es necesario
+        
+        // Puedes convertir tu objeto request en datos para enviarlo en el cuerpo de la solicitud
+        let requestData = try? JSONEncoder().encode(request)
+        urlRequest.httpBody = requestData
+        
+        // Crear una sesión de URLSession
+        let session = URLSession.shared
+        
+        // Crear una tarea de solicitud de datos
+        let task = session.dataTask(with: urlRequest) { (data, response, error) in
+            // Comprobar si hay errores
+            if let error = error {
+                print("Error: \(error.localizedDescription)")
+                return
+            }
+            
+            // Comprobar si la respuesta es válida
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                print("Respuesta no válida")
+                return
+            }
+            
+            // Procesar los datos recibidos (en este ejemplo, se asume que la respuesta es JSON)
+            if let data = data {
+                do {
+                    let issuerResponse = try JSONDecoder().decode(IssuerResponse.self, from: data)
+                    onFinish(issuerResponse)
+                } catch {
+                    print("Error al decodificar la respuesta JSON: \(error.localizedDescription)")
+                }
             }
         }
-        
+        // Iniciar la tarea de solicitud
+        task.resume()
     }
 }
