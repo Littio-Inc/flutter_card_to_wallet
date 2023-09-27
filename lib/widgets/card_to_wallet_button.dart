@@ -67,11 +67,7 @@ class _AddToWalletButtonState extends State<AddToWalletButton> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      height: height,
-      child: platformWidget(context),
-    );
+    return platformWidget(context);
   }
 
   Widget platformWidget(BuildContext context) {
