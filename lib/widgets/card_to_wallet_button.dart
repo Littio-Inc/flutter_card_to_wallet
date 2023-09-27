@@ -73,11 +73,15 @@ class _AddToWalletButtonState extends State<AddToWalletButton> {
   Widget platformWidget(BuildContext context) {
     switch (defaultTargetPlatform) {
       case TargetPlatform.iOS:
-        return UiKitView(
-          viewType: AddToWalletButton.viewType,
-          layoutDirection: Directionality.of(context),
-          creationParams: uiKitCreationParams,
-          creationParamsCodec: const StandardMessageCodec(),
+        return SizedBox(
+          width: width,
+          height: height,
+          child: UiKitView(
+            viewType: AddToWalletButton.viewType,
+            layoutDirection: Directionality.of(context),
+            creationParams: uiKitCreationParams,
+            creationParamsCodec: const StandardMessageCodec(),
+          ),
         );
       default:
         if (widget.unsupportedPlatformChild == null) {
